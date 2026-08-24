@@ -1,0 +1,634 @@
+---
+title: "GPHS 782: USGS Streamflow and Water-Quality Data Lab"
+subtitle: "Using the modern USGS Water Data APIs in R"
+author: "GPHS 782 Watershed Science Seminar"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+# Learning objectives
+
+In this lab, we will treat stream gages as windows into **integrated watershed behavior**.
+
+You will learn how to:
+
+1. clone the course GitHub repository;
+2. locate monitoring stations in USGS Water Data for the Nation;
+3. query the modern USGS Water Data APIs from R;
+4. download discharge, water temperature, and turbidity data;
+5. calculate annual water yield;
+6. compare turbidity among watersheds; and
+7. evaluate whether differences in data availability affect the conclusions we can draw.
+
+# Clone the GitHub repository
+
+Our course repository is:
+
+<https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git>
+
+## Using RStudio
+
+Go to:
+
+**File → New Project → Version Control → Git**
+
+Then enter:
+
+```text
+https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git
+```
+
+Choose a location on your computer and click **Create Project**.
+
+## Using the terminal
+
+```bash
+git clone https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git
+cd GPHS_782_watershed_sci_seminar
+```
+
+**Checkpoint:** Look in the Files pane in RStudio. Are you working inside the cloned repository?
+
+# Explore USGS Water Data
+
+Before writing code, open:
+
+- USGS Water Data for the Nation: <https://waterdata.usgs.gov/>
+- USGS Water Data APIs: <https://www.usgs.gov/tools/usgs-water-data-apis>
+- USGS API landing page: <https://api.waterdata.usgs.gov/>
+- `dataRetrieval` documentation: <https://water.code-pages.usgs.gov/dataRetrieval/>
+
+The `dataRetrieval` package provides R functions that construct requests to the modern USGS Water Data APIs.
+
+For this class, we will use functions beginning with:
+
+```text
+read_waterdata_*
+```
+
+# Install and load packages
+
+Run these installation lines once if needed.
+
+```{r packages, eval=FALSE}
+install.packages(c(
+  "dataRetrieval",
+  "tidyverse",
+  "lubridate",
+  "scales"
+))
+```
+
+Load packages:
+
+```{r libraries}
+library(dataRetrieval)
+library(tidyverse)
+library(lubridate)
+library(scales)
+```
+
+# Our watersheds
+
+We will compare two Lake Tahoe tributaries with the much larger Truckee River.
+
+```{r sites}
+sites <- tribble(
+  ~site_name,        ~monitoring_location_id, ~drainage_area_mi2,
+  "Blackwood Creek", "USGS-10336660",          11.2,
+  "Incline Creek",   "USGS-10336700",           6.74,
+  "Truckee River",   "USGS-10348000",        1067
+)
+
+sites
+```
+
+The sites differ greatly in drainage area, so **total discharge volume** and **watershed-normalized runoff** answer different questions.
+
+# Look up station metadata with the API
+
+```{r site-metadata}
+site_metadata <- read_waterdata_monitoring_location(
+  monitoring_location_id = sites$monitoring_location_id
+)
+
+site_metadata %>%
+  as_tibble() %>%
+  select(
+    any_of(c(
+      "id",
+      "monitoring_location_id",
+      "monitoring_location_name",
+      "state_name",
+      "county_name",
+      "hydrologic_unit_code",
+      "drainage_area"
+    ))
+  )
+```
+
+
+#  USGS parameter codes
+
+```{r parameter-codes}
+parameter_codes <- tribble(
+  ~parameter_code, ~variable,
+  "00060", "Discharge",
+  "00010", "Water temperature",
+  "63680", "Turbidity"
+)
+
+parameter_codes
+```
+
+Ask what the parameter codes mean:
+
+```{r parameter-metadata}
+parameter_metadata <- read_waterdata_parameter_codes(
+  parameter_code = parameter_codes$parameter_code
+)
+
+parameter_metadata %>%
+  as_tibble() %>%
+  select(any_of(c(
+    "parameter_code",
+    "parameter_name",
+    "parameter_description",
+    "unit_of_measure"
+  )))
+```
+
+# Check data availability before downloading
+
+A common mistake is assuming that every USGS gage measures every variable.
+
+```{r time-series-meta}
+ts_metadata <- read_waterdata_ts_meta(
+  monitoring_location_id = sites$monitoring_location_id
+) %>%
+  as_tibble()
+
+names(ts_metadata)
+```
+
+Filter for the variables we care about:
+
+```{r availability}
+availability <- ts_metadata %>%
+  filter(parameter_code %in% parameter_codes$parameter_code) %>%
+  left_join(parameter_codes, by = "parameter_code") %>%
+  left_join(sites, by = "monitoring_location_id")
+
+availability %>%
+  select(
+    any_of(c(
+      "site_name",
+      "monitoring_location_id",
+      "variable",
+      "parameter_code",
+      "computation_period_identifier",
+      "begin",
+      "end",
+      "begin_date",
+      "end_date",
+      "unit_of_measure"
+    ))
+  ) %>%
+  arrange(site_name, variable)
+```
+
+Because metadata fields can evolve, `any_of()` keeps the display step from failing if a column name changes.
+
+# Define a water year
+
+We will compare **Water Year 2024**.
+
+```{r dates}
+start_date <- as.Date("2023-10-01")
+end_date   <- as.Date("2024-09-30")
+
+start_date
+end_date
+```
+
+Water Year 2024 begins October 1, 2023 and ends September 30, 2024.
+
+# Download daily mean discharge
+
+For discharge, we do not need every 15-minute observation.
+
+- Parameter `00060` = discharge
+- Statistic `00003` = mean
+
+```{r download-discharge}
+q_daily <- read_waterdata_daily(
+  monitoring_location_id = sites$monitoring_location_id,
+  parameter_code = "00060",
+  statistic_id = "00003",
+  time = c(start_date, end_date)
+) %>%
+  as_tibble()
+
+glimpse(q_daily)
+```
+
+Clean the discharge data:
+
+```{r clean-discharge}
+q_daily_clean <- q_daily %>%
+  transmute(
+    monitoring_location_id,
+    date = as.Date(time),
+    discharge_cfs = as.numeric(value)
+  ) %>%
+  left_join(sites, by = "monitoring_location_id")
+
+head(q_daily_clean)
+```
+
+# Check discharge completeness
+
+```{r q-completeness}
+q_completeness <- q_daily_clean %>%
+  group_by(site_name) %>%
+  summarise(
+    first_date = min(date, na.rm = TRUE),
+    last_date = max(date, na.rm = TRUE),
+    days_with_data = n_distinct(date[!is.na(discharge_cfs)]),
+    missing_q_values = sum(is.na(discharge_cfs)),
+    .groups = "drop"
+  )
+
+q_completeness
+```
+
+### Question
+
+Would you calculate annual water yield if a site were missing several months of discharge data? Why or why not?
+
+#  Plot the hydrographs
+
+```{r hydrographs, fig.width=10, fig.height=6}
+ggplot(q_daily_clean, aes(x = date, y = discharge_cfs)) +
+  geom_line() +
+  facet_wrap(~ site_name, scales = "free_y", ncol = 1) +
+  labs(
+    x = NULL,
+    y = expression("Daily mean discharge (ft"^3*"/s)"),
+    title = "Water Year 2024 hydrographs"
+  ) +
+  theme_minimal()
+```
+
+Consider controls on hydrograph shape:
+
+- watershed size,
+- snow accumulation and melt,
+- groundwater contributions,
+- channel storage,
+- reservoirs and regulation,
+- diversions,
+- elevation,
+- precipitation timing.
+
+# Calculate total annual streamflow volume
+
+Daily discharge is reported in cubic feet per second.
+
+\[
+V_{day} = Q \times 86,400 \; \frac{seconds}{day}
+\]
+
+and
+
+\[
+1 \; acre\!-\!foot = 43,560 \; ft^3
+\]
+
+Therefore:
+
+```{r conversion}
+cfs_day_to_acre_feet <- 86400 / 43560
+cfs_day_to_acre_feet
+```
+
+Approximately 1 cfs sustained for one day equals 1.9835 acre-feet.
+
+```{r annual-volume}
+annual_yield <- q_daily_clean %>%
+  mutate(
+    daily_volume_af = discharge_cfs * cfs_day_to_acre_feet
+  ) %>%
+  group_by(site_name, drainage_area_mi2) %>%
+  summarise(
+    days_with_q = sum(!is.na(discharge_cfs)),
+    annual_volume_af = sum(daily_volume_af, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+annual_yield
+```
+
+**Important:** `na.rm = TRUE` does not fill missing days. Interpret annual volume together with `days_with_q`.
+
+#  Normalize annual flow by watershed area
+
+One square mile contains 640 acres.
+
+```{r runoff-depth}
+annual_yield <- annual_yield %>%
+  mutate(
+    watershed_area_acres = drainage_area_mi2 * 640
+  )
+
+annual_yield
+```
+
+Plot total volume:
+
+```{r yield-plots, fig.width=9, fig.height=5}
+ggplot(annual_yield, aes(x = reorder(site_name, annual_volume_af), y = annual_volume_af)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = comma) +
+  labs(
+    x = NULL,
+    y = "Annual discharge volume (acre-feet)",
+    title = "Total annual streamflow volume"
+  ) +
+  theme_minimal()
+```
+
+
+### Questions
+
+1. Which site has the largest **total** annual discharge?
+2. Which site has the largest **area-normalized runoff depth**?
+3. Why are these rankings not necessarily the same?
+4. Is runoff depth a direct measurement of precipitation? Why not?
+
+# Download high-frequency water temperature and turbidity
+
+Use the continuous-values API for sensor observations.
+
+```{r download-continuous}
+sensor_data <- read_waterdata_continuous(
+  monitoring_location_id = sites$monitoring_location_id,
+  parameter_code = c("00010", "63680"),
+  time = c(start_date, end_date)
+) %>%
+  as_tibble()
+
+glimpse(sensor_data)
+```
+
+This request may take longer because continuous records contain many observations.
+
+#  Clean the sensor data
+
+```{r clean-sensors}
+sensor_clean <- sensor_data %>%
+  transmute(
+    monitoring_location_id,
+    datetime = as.POSIXct(time),
+    parameter_code,
+    value = as.numeric(value),
+    unit_of_measure = unit_of_measure
+  ) %>%
+  left_join(parameter_codes, by = "parameter_code") %>%
+  left_join(sites, by = "monitoring_location_id")
+
+sensor_clean %>%
+  count(site_name, variable)
+```
+
+
+# Summarize water temperature
+
+Calculate daily mean temperature:
+
+```{r daily-temp}
+temp_daily <- sensor_clean %>%
+  filter(parameter_code == "00010") %>%
+  mutate(date = as.Date(datetime)) %>%
+  group_by(site_name, date) %>%
+  summarise(
+    mean_temp_c = mean(value, na.rm = TRUE),
+    n_obs = sum(!is.na(value)),
+    .groups = "drop"
+  )
+
+temp_daily
+```
+
+### Question
+
+Is mean daily the most helpful response?
+What about variance from solar noon?
+What about extremes related to short events?
+
+
+Plot available records:
+
+```{r temp-plot, fig.width=9, fig.height=5}
+ggplot(temp_daily, aes(x = date, y = mean_temp_c, color = site_name)) +
+  geom_line() +
+  labs(
+    x = NULL,
+    y = "Daily mean water temperature (°C)",
+    color = "Site",
+    title = "Available water-temperature records"
+  ) +
+  theme_minimal()
+```
+
+The Truckee River at Reno is useful for discharge and turbidity, but it does not currently provide the same continuous temperature record as Blackwood and Incline Creeks.
+
+This is a real-world feature of environmental databases: **the best station depends on the question and variable.**
+
+Optional nearby Truckee River temperature site:
+
+```{r clark-temp, eval=FALSE}
+clark_temp <- read_waterdata_continuous(
+  monitoring_location_id = "USGS-10350500",
+  parameter_code = "00010",
+  time = c(start_date, end_date)
+)
+```
+
+#  Summarize turbidity carefully
+
+Turbidity parameter `63680` is reported in FNU.
+
+Rather than simply averaging every 15-minute value, first calculate daily summaries.
+
+```{r daily-turbidity}
+turbidity_daily <- sensor_clean %>%
+  filter(parameter_code == "63680") %>%
+  mutate(date = as.Date(datetime)) %>%
+  group_by(site_name, date) %>%
+  summarise(
+    mean_turbidity_fnu = mean(value, na.rm = TRUE),
+    median_turbidity_fnu = median(value, na.rm = TRUE),
+    max_turbidity_fnu = max(value, na.rm = TRUE),
+    n_obs = sum(!is.na(value)),
+    .groups = "drop"
+  )
+
+turbidity_daily
+```
+
+Check completeness:
+
+```{r turbidity-completeness}
+turbidity_completeness <- turbidity_daily %>%
+  group_by(site_name) %>%
+  summarise(
+    days_with_turbidity = n_distinct(date),
+    first_day = min(date),
+    last_day = max(date),
+    .groups = "drop"
+  )
+
+turbidity_completeness
+```
+
+#  Compare mean turbidity among watersheds
+
+```{r turbidity-summary}
+turbidity_summary <- turbidity_daily %>%
+  group_by(site_name) %>%
+  summarise(
+    days_with_data = n(),
+    mean_daily_turbidity_fnu = mean(mean_turbidity_fnu, na.rm = TRUE),
+    median_daily_turbidity_fnu = median(mean_turbidity_fnu, na.rm = TRUE),
+    maximum_daily_turbidity_fnu = max(max_turbidity_fnu, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+turbidity_summary
+```
+
+```{r turbidity-barplot, fig.width=9, fig.height=5}
+ggplot(
+  turbidity_summary,
+  aes(
+    x = reorder(site_name, mean_daily_turbidity_fnu),
+    y = mean_daily_turbidity_fnu
+  )
+) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "Mean daily turbidity (FNU)",
+    title = "Mean turbidity during Water Year 2024"
+  ) +
+  theme_minimal()
+```
+
+# Turbidity through time
+
+```{r turbidity-time, fig.width=10, fig.height=6}
+ggplot(turbidity_daily, aes(x = date, y = mean_turbidity_fnu)) +
+  geom_line() +
+  facet_wrap(~ site_name, scales = "free_y", ncol = 1) +
+  labs(
+    x = NULL,
+    y = "Daily mean turbidity (FNU)",
+    title = "Turbidity is episodic"
+  ) +
+  theme_minimal()
+```
+
+### Questions
+
+1. Are the highest-turbidity days associated with high-flow periods?
+2. Would the annual mean or event maximum better describe sediment transport?
+3. Why might the answer depend on the ecological or management question?
+
+# Put discharge and turbidity together
+
+```{r join-q-turbidity}
+q_turbidity <- q_daily_clean %>%
+  select(site_name, date, discharge_cfs) %>%
+  inner_join(
+    turbidity_daily %>%
+      select(site_name, date, mean_turbidity_fnu),
+    by = c("site_name", "date")
+  )
+
+head(q_turbidity)
+```
+
+Plot turbidity against discharge:
+
+```{r q-turbidity-plot, fig.width=9, fig.height=6}
+ggplot(
+  q_turbidity,
+  aes(x = discharge_cfs, y = mean_turbidity_fnu)
+) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(~ site_name, scales = "free") +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(
+    x = expression("Daily mean discharge (ft"^3*"/s; log scale)"),
+    y = "Daily mean turbidity (FNU; log scale)",
+    title = "Does turbidity increase with streamflow?"
+  ) +
+  theme_minimal()
+```
+
+> **Note:** Log scales cannot display zero values. Inspect zeros before deciding how to handle them.
+
+#  Summary table 
+
+```{r final-table}
+final_summary <- annual_yield %>%
+  left_join(
+    turbidity_summary,
+    by = "site_name"
+  ) %>%
+  arrange(desc(drainage_area_mi2))
+
+final_summary
+```
+
+#  Inspect the API request itself
+
+The `dataRetrieval` functions construct API requests for us.
+
+A daily mean discharge request follows this logic:
+
+```text
+https://api.waterdata.usgs.gov/ogcapi/v0/collections/daily/items
+    ?monitoring_location_id=USGS-10336660
+    &parameter_code=00060
+    &statistic_id=00003
+    &time=2023-10-01/2024-09-30
+```
+
+The important parts are:
+
+- **where?** monitoring location
+- **what?** parameter code
+- **which statistic?** mean
+- **when?** date range
+
+# Reproducibility
+
+```{r session-info}
+sessionInfo()
+```
