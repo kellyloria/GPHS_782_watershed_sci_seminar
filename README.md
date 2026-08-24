@@ -34,6 +34,8 @@ https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git
 
 # II. First week: USGS observational Data: 
 
+http://rpubs.com/kellyloria/1453858
+
 ## 2. USGS resources
 
 - **USGS Water Data map, Streamstats:** https://streamstats.usgs.gov/ss/
