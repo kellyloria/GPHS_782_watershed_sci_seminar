@@ -23,13 +23,13 @@ In this lab, we will treat stream gages as windows into **integrated watershed b
 
 You will learn how to:
 
-1. clone the course GitHub repository;
-2. locate monitoring stations in USGS Water Data for the Nation;
-3. query the modern USGS Water Data APIs from R;
-4. download discharge, water temperature, and turbidity data;
-5. calculate annual water yield;
-6. compare turbidity among watersheds; and
-7. evaluate whether differences in data availability affect the conclusions we can draw.
+1.  clone the course GitHub repository;
+2.  locate monitoring stations in USGS Water Data for the Nation;
+3.  query the modern USGS Water Data APIs from R;
+4.  download discharge, water temperature, and turbidity data;
+5.  calculate annual water yield;
+6.  compare turbidity among watersheds; and
+7.  evaluate whether differences in data availability affect the conclusions we can draw.
 
 # Clone the GitHub repository
 
@@ -45,7 +45,7 @@ Go to:
 
 Then enter:
 
-```text
+``` text
 https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git
 ```
 
@@ -53,7 +53,7 @@ Choose a location on your computer and click **Create Project**.
 
 ## Using the terminal
 
-```bash
+``` bash
 git clone https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git
 cd GPHS_782_watershed_sci_seminar
 ```
@@ -73,7 +73,7 @@ The `dataRetrieval` package provides R functions that construct requests to the 
 
 For this class, we will use functions beginning with:
 
-```text
+``` text
 read_waterdata_*
 ```
 
@@ -138,8 +138,7 @@ site_metadata %>%
   )
 ```
 
-
-#  USGS parameter codes
+# USGS parameter codes
 
 ```{r parameter-codes}
 parameter_codes <- tribble(
@@ -277,7 +276,7 @@ q_completeness
 
 Would you calculate annual water yield if a site were missing several months of discharge data? Why or why not?
 
-#  Plot the hydrographs
+# Plot the hydrographs
 
 ```{r hydrographs, fig.width=10, fig.height=6}
 ggplot(q_daily_clean, aes(x = date, y = discharge_cfs)) +
@@ -306,15 +305,11 @@ Consider controls on hydrograph shape:
 
 Daily discharge is reported in cubic feet per second.
 
-\[
-V_{day} = Q \times 86,400 \; \frac{seconds}{day}
-\]
+$$V_{day} = Q \times 86,400 \; \frac{seconds}{day}$$
 
 and
 
-\[
-1 \; acre\!-\!foot = 43,560 \; ft^3
-\]
+$$1 \; acre\!-\!foot = 43,560 \; ft^3$$
 
 Therefore:
 
@@ -342,7 +337,7 @@ annual_yield
 
 **Important:** `na.rm = TRUE` does not fill missing days. Interpret annual volume together with `days_with_q`.
 
-#  Normalize annual flow by watershed area
+# Normalize annual flow by watershed area
 
 One square mile contains 640 acres.
 
@@ -370,13 +365,12 @@ ggplot(annual_yield, aes(x = reorder(site_name, annual_volume_af), y = annual_vo
   theme_minimal()
 ```
 
-
 ### Questions
 
-1. Which site has the largest **total** annual discharge?
-2. Which site has the largest **area-normalized runoff depth**?
-3. Why are these rankings not necessarily the same?
-4. Is runoff depth a direct measurement of precipitation? Why not?
+1.  Which site has the largest **total** annual discharge?
+2.  Which site has the largest **area-normalized runoff depth**?
+3.  Why are these rankings not necessarily the same?
+4.  Is runoff depth a direct measurement of precipitation? Why not?
 
 # Download high-frequency water temperature and turbidity
 
@@ -395,7 +389,7 @@ glimpse(sensor_data)
 
 This request may take longer because continuous records contain many observations.
 
-#  Clean the sensor data
+# Clean the sensor data
 
 ```{r clean-sensors}
 sensor_clean <- sensor_data %>%
@@ -412,7 +406,6 @@ sensor_clean <- sensor_data %>%
 sensor_clean %>%
   count(site_name, variable)
 ```
-
 
 # Summarize water temperature
 
@@ -434,10 +427,7 @@ temp_daily
 
 ### Question
 
-Is mean daily the most helpful response?
-What about variance from solar noon?
-What about extremes related to short events?
-
+Is mean daily the most helpful response? What about variance from solar noon? What about extremes related to short events?
 
 Plot available records:
 
@@ -467,7 +457,7 @@ clark_temp <- read_waterdata_continuous(
 )
 ```
 
-#  Summarize turbidity carefully
+# Summarize turbidity carefully
 
 Turbidity parameter `63680` is reported in FNU.
 
@@ -504,7 +494,7 @@ turbidity_completeness <- turbidity_daily %>%
 turbidity_completeness
 ```
 
-#  Compare mean turbidity among watersheds
+# Compare mean turbidity among watersheds
 
 ```{r turbidity-summary}
 turbidity_summary <- turbidity_daily %>%
@@ -554,9 +544,9 @@ ggplot(turbidity_daily, aes(x = date, y = mean_turbidity_fnu)) +
 
 ### Questions
 
-1. Are the highest-turbidity days associated with high-flow periods?
-2. Would the annual mean or event maximum better describe sediment transport?
-3. Why might the answer depend on the ecological or management question?
+1.  Are the highest-turbidity days associated with high-flow periods?
+2.  Would the annual mean or event maximum better describe sediment transport?
+3.  Why might the answer depend on the ecological or management question?
 
 # Put discharge and turbidity together
 
@@ -593,7 +583,7 @@ ggplot(
 
 > **Note:** Log scales cannot display zero values. Inspect zeros before deciding how to handle them.
 
-#  Summary table 
+# Summary table
 
 ```{r final-table}
 final_summary <- annual_yield %>%
@@ -606,13 +596,13 @@ final_summary <- annual_yield %>%
 final_summary
 ```
 
-#  Inspect the API request itself
+# Inspect the API request itself
 
 The `dataRetrieval` functions construct API requests for us.
 
 A daily mean discharge request follows this logic:
 
-```text
+``` text
 https://api.waterdata.usgs.gov/ogcapi/v0/collections/daily/items
     ?monitoring_location_id=USGS-10336660
     &parameter_code=00060
