@@ -1,0 +1,552 @@
+---
+title: "GPHS 782: USGS Streamflow and Landcover Lab"
+subtitle: "Linking NHDPlus watershed attributes to USGS streamflow data"
+author: "GPHS 782 Watershed Science Seminar"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+# Learning objectives
+
+In this lab, we will treat stream gages as windows into **integrated watershed behavior**.
+
+You will learn how to:
+
+1.  Set a project file path so R can consistently find the local `NHD_data_files` folder.
+2.  Explore USGS datasets on ScienceBase.
+3.  Read NHDPlus catchment-characteristic text files into R.
+4.  Explore unique land-cover, basin, and geologic attributes.
+5.  Link upstream land-cover and geologic characteristics to USGS stream gages and compare them with flow metrics.
+
+
+## Reminder our course repository is:
+
+<https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git>
+
+# Set the project and data paths
+
+Create a folder named `NHD_data_files` inside your local copy of the course repository. At the beginning of each R session, set `project_dir` to the location of the repository on **your** computer. Do not copy the example path without changing it.
+
+```{r file-paths}
+# Example for macOS; replace this with the path on your computer.
+
+project_dir <- "/Users/kellyloria/Documents/teaching/2026_Fall/"
+
+#project_dir <- "/Users/your_name/Documents/GPHS_782_watershed_sci_seminar"
+
+# Windows paths can be written with forward slashes, for example:
+# project_dir <- "C:/Users/your_name/Documents/GPHS_782_watershed_sci_seminar"
+
+nhd_data_dir <- file.path(project_dir, "/NHD_data_files")
+
+# Stop with an informative message if R cannot find the folder.
+if (!dir.exists(nhd_data_dir)) {
+  stop(
+    "R cannot find the NHD_data_files folder. Check project_dir and ",
+    "confirm that NHD_data_files is inside the course repository."
+  )
+}
+
+```
+
+Using a path object and `file.path()` is preferable to repeatedly changing the working directory. It also makes the script easier to run on Windows and macOS.
+
+# Install and load packages
+
+Run these installation lines once if needed.
+
+```{r packages, eval=FALSE}
+install.packages(c(
+  "dataRetrieval",
+  "tidyverse",
+  "lubridate",
+  "scales",
+  "ggrepel"
+))
+```
+
+Load packages:
+
+```{r libraries}
+library(dataRetrieval)
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(ggrepel)
+```
+
+Load the helper function used to assign an NHDPlus COMID to each USGS gage:
+
+```{r comid-function}
+
+source(file.path(project_dir, "./watershed_sci_code_demos/assign_comID_fxn.R"))
+  
+```
+
+# Obtain the NHDPlus attribute files
+
+This exercise uses three comma-delimited text tables from the USGS data release **Select Attributes for NHDPlus Version 2.1 Reach Catchments and Modified Network Routed Upstream Watersheds for the Conterminous United States**:
+
+- `BASIN_CHAR_ACC_CONUS.TXT`
+- `NLCD16_ACC_CONUS.TXT`
+- `BUSHREED_ACC_CONUS.txt`
+
+You have two options:
+
+1. Copy the three files on the class Google Drive into the local `NHD_data_files` folder. https://drive.google.com/drive/u/0/folders/1QOi-BCvF3ze_QmbhBZsjkA-ldNnLxisG
+
+2. Open the [USGS ScienceBase data release](https://www.sciencebase.gov/catalog/item/5669a79ee4b08895842a1d47), locate the corresponding child items, download their ZIP archives, and extract the three `.TXT` files into `NHD_data_files`.
+
+After downloading, your project should have this structure:
+
+``` text
+GPHS_782_watershed_sci_seminar/
+├── 02_USGS_flow_landcover_lab.Rmd
+└── NHD_data_files/
+    ├── BASIN_CHAR_ACC_CONUS.TXT
+    ├── NLCD16_ACC_CONUS.TXT
+    └── BUSHREED_ACC_CONUS.txt
+```
+
+# Read the local NHDPlus attribute files
+
+Keep the original column names during import because the prefixes and class codes contain information about the attribute and spatial scale.
+
+
+```{r read-nhd-files}
+
+basin_char_raw <- read.csv(
+  file.path(nhd_data_dir, "BASIN_CHAR_ACC_CONUS.TXT"),
+  check.names = FALSE,
+  stringsAsFactors = FALSE,
+  na.strings = c("", "NA", "-9999")
+)
+
+nlcd16_raw <- read.csv(
+  file.path(nhd_data_dir, "NLCD16_ACC_CONUS.TXT"),
+  check.names = FALSE,
+  stringsAsFactors = FALSE,
+  na.strings = c("", "NA", "-9999")
+)
+
+bushreed_raw <- read.csv(
+  file.path(nhd_data_dir, "BUSHREED_ACC_CONUS.txt"),
+  check.names = FALSE,
+  stringsAsFactors = FALSE,
+  na.strings = c("", "NA", "-9999")
+)
+
+# Inspect a small sample of field names without printing every column.
+head(names(basin_char_raw), 12)
+head(names(nlcd16_raw), 12)
+head(names(bushreed_raw), 12)
+
+```
+# Understand the NHDPlus variables
+
+All three tables use `COMID` as the NHDPlusV2 reach/catchment identifier. In the preparation steps below, we rename this field to `comid` and store it as character data so it can be used consistently as the join key after assigning each stream gage an NHDPlus COMID.
+
+The prefixes describe the spatial area summarized:
+
+- `CAT_` means the value describes only the **local catchment** draining directly to that NHDPlus reach.
+- `ACC_` means the value has been **accumulated through the upstream network**.
+- Some companion datasets use `TOT_` for the **entire upstream watershed**. Do not treat `CAT_`, `ACC_`, and `TOT_` values as interchangeable.
+
+In this lab, we will focus on `ACC_` variables because they describe conditions accumulated across the upstream drainage network.
+
+## `BASIN_CHAR_ACC_CONUS.TXT`
+
+This table contains upstream-accumulated physical and climatic basin characteristics. Depending on the release version, the variable families include:
+
+- basin or drainage area;
+- mean, minimum, or maximum elevation;
+- catchment or channel slope;
+- long-term precipitation and temperature summaries; and
+- other characteristics accumulated from all upstream catchments.
+
+`ACC_` variables characterize the upstream drainage network rather than only the small catchment surrounding the selected reach. Area totals may be additive, while mean variables are generally accumulated using an appropriate weighting method. Always check the units and accumulation method in the [Basin Characteristics README](https://www.sciencebase.gov/catalog/file/get/57976a0ce4b021cadec97890?f=__disk__9c%2Fc7%2F1c%2F9cc71c30695d52afd7b8b6eafb431ead0114ba99&transform=1&allowOpen=true).
+
+```{r prepare-basin-variables}
+basin_char_raw <- basin_char_raw %>%
+    rename(comid = COMID) %>%
+    mutate(comid=as.character(comid))%>%
+  select(comid, starts_with("acc_"))
+```
+
+## `NLCD16_ACC_CONUS.TXT`
+
+This table contains upstream-accumulated land-cover summaries:
+
+- `ACC_NLCD16_11` = open water
+- `ACC_NLCD16_21` = developed, open space
+- `ACC_NLCD16_42` = evergreen forest
+- `ACC_NLCD16_52` = shrub/scrub
+- `ACC_NLCD16_71` = grassland/herbaceous
+- `ACC_NLCD16_82` = cultivated crops
+- `ACC_NLCD16_90` = woody wetlands
+
+The cover class-code lookup is provided in the [NLCD16 README](https://www.sciencebase.gov/catalog/file/get/5d66b3b6e4b0c4f70cefb11d?f=__disk__db%2F6e%2F1d%2Fdb6e1d29340ff7c1e074e7f4371a05bc8cbf6b74&transform=1&allowOpen=true). The README also identifies units, no-data conventions, and whether values are counts, areas, or percentages.
+
+```{r prepare-nlcd-variables}
+nlcd16_raw <- nlcd16_raw %>%
+  rename(comid = COMID) %>%
+    mutate(comid=as.character(comid))%>%
+  select(comid, starts_with("acc_"))
+
+# Rename fields to descriptive land-cover classes
+nlcd16_attributes <- nlcd16_raw %>%
+  rename(
+    upstream_open_water_pct = ACC_NLCD16_11,
+    upstream_ice_snow_pct = ACC_NLCD16_12,
+    upstream_developed_open_pct = ACC_NLCD16_21,
+    upstream_developed_low_pct =  ACC_NLCD16_22,
+    upstream_developed_medium_pct = ACC_NLCD16_23,
+    upstream_developed_high_pct = ACC_NLCD16_24,
+    upstream_barren_pct = ACC_NLCD16_31,
+    upstream_deciduous_forest_pct = ACC_NLCD16_41,
+    upstream_evergreen_forest_pct = ACC_NLCD16_42,
+    upstream_mixed_forest_pct = ACC_NLCD16_43,
+    upstream_shrub_pct = ACC_NLCD16_52,
+    upstream_grassland_pct =  ACC_NLCD16_71,
+    upstream_pasture_pct = ACC_NLCD16_81,
+    upstream_crops_pct =  ACC_NLCD16_82,
+    upstream_woody_wetland_pct = ACC_NLCD16_90,
+    upstream_emergent_wetland_pct = ACC_NLCD16_95,
+    upstream_nodata_pct = ACC_NODATA
+  )
+```
+
+## `BUSHREED_ACC_CONUS.txt`
+
+This table contains geologic summaries. Here, we retain the accumulated (`ACC_`) fields so the spatial extent is consistent with the basin and land-cover attributes. Use the prefix to determine the spatial extent and consult the [Rock Types README](https://www.sciencebase.gov/catalog/file/get/5703f6b5e4b0328dcb826d06?f=__disk__d6%2Fc5%2Fdb%2Fd6c5dba9818187b0a088548b5bef96b1058cf779&transform=1&allowOpen=true) for the exact field definitions, units, source map, and treatment of mixed or unmapped aquifer geology.
+
+- `ACC_BUSHREED1` = gneiss
+- `ACC_BUSHREED2` = granitic
+- `ACC_BUSHREED3` = ultramafic
+- `ACC_BUSHREED4` = Quaternary
+- `ACC_BUSHREED5` = sedimentary
+- `ACC_BUSHREED6` = volcanic
+- `ACC_BUSHREED8` = water
+- `ACC_BUSHREED9` = anorthositic
+- `ACC_BUSHREED10` = intermediate
+- `ACC_NODATA` = area not covered by the source geology dataset
+
+```{r prepare-geology-variables}
+bushreed_raw <- bushreed_raw %>%
+  rename(comid = COMID) %>%
+  mutate(comid=as.character(comid))%>%
+  select(comid, starts_with("acc_"))
+
+
+# Rename fields to descriptive geology classes
+geology_attributes <- bushreed_raw %>%
+  rename(
+    upstream_gneiss_pct       = ACC_BUSHREED1,
+    upstream_granitic_pct     = ACC_BUSHREED2,
+    upstream_ultramafic_pct   = ACC_BUSHREED3,
+    upstream_quaternary_pct   = ACC_BUSHREED4,
+    upstream_sedimentary_pct  = ACC_BUSHREED5,
+    upstream_volcanic_pct     = ACC_BUSHREED6,
+    upstream_water_pct        = ACC_BUSHREED8,
+    upstream_anorthositic_pct = ACC_BUSHREED9,
+    upstream_intermediate_pct = ACC_BUSHREED10,
+    upstream_geology_nodata_pct = ACC_NODATA
+  ) %>%
+  distinct(comid, .keep_all = TRUE)
+
+```
+
+# Define the study gages
+
+The selected gages represent watersheds with different physical characteristics. We will first retrieve their metadata and streamflow records, then connect each gage to its upstream NHDPlus attributes.
+
+## Specify USGS gages
+
+```{r define-sites}
+sites <- c("USGS-10347600", "USGS-10348245", "USGS-10349849", 
+           "USGS-10347310", "USGS-11119750", "USGS-11119940", 
+           "USGS-11120000", "USGS-11120500")
+
+```
+
+
+```{r site-metadata, results="hide"}
+site_metadata <- read_waterdata_monitoring_location(
+  monitoring_location_id = sites
+)
+
+site_metadata <- site_metadata %>%
+  as.data.frame() %>%
+  select(
+    any_of(c(
+      "id",
+      "monitoring_location_id",
+      "monitoring_location_name",
+      "state_name",
+      "county_name",
+      "hydrologic_unit_code",
+      "drainage_area"
+    ))
+  )
+```
+
+## Define the discharge parameter
+
+```{r parameter-codes}
+parameter_codes <- tribble(
+  ~parameter_code, ~variable,
+  "00060", "Discharge"
+)
+
+```
+
+Because metadata fields can evolve, `any_of()` prevents the selection step from failing if an optional column is unavailable.
+
+## Define the analysis period
+
+We will use daily discharge from October 1, 2006 through September 30, 2024. This multi-year record provides a more representative basis for calculating flow-exceedance statistics than a single water year.
+
+```{r dates}
+start_date <- as.Date("2006-10-01")
+end_date   <- as.Date("2024-09-30")
+
+```
+
+The end date corresponds to the end of Water Year 2024.
+
+## Download daily mean discharge
+
+For discharge, we do not need every 15-minute observation.
+
+- Parameter `00060` = discharge
+- Statistic `00003` = mean
+
+```{r download-discharge}
+q_daily <- read_waterdata_daily(
+  monitoring_location_id = sites,
+  parameter_code = "00060",
+  statistic_id = "00003",
+  time = c(start_date, end_date)
+) %>%
+  dplyr::select(monitoring_location_id,parameter_code,statistic_id, time, value)%>%
+  as_tibble()
+
+dplyr::slice_head(q_daily, n = 6)
+```
+
+Next, clean the discharge values and join the station metadata:
+
+```{r clean-discharge}
+q_daily_clean <- q_daily %>%
+  transmute(
+    monitoring_location_id,
+    date = as.Date(time),
+    discharge_cfs = as.numeric(value)
+  ) %>%
+  left_join(site_metadata, by = "monitoring_location_id")
+
+dplyr::slice_head(q_daily_clean, n = 6)
+```
+
+## Plot the hydrographs
+
+```{r hydrographs, fig.width=10, fig.height=6}
+ggplot(q_daily_clean, aes(x = date, y = discharge_cfs)) +
+  geom_line() +
+  facet_wrap(~ monitoring_location_name, scales = "free_y", ncol = 1) +
+  labs(
+    x = NULL,
+    y = expression("Daily mean discharge (ft"^3*"/s)"),
+    title = "Daily mean discharge, 2006–2024"
+  ) +
+  theme_minimal()
+```
+# Characterize flow regimes
+
+## Calculate flow-exceedance statistics
+
+Exceedance probability is the percentage of observations equaled or exceeded by a given flow. With rank \(m\) among \(n\) non-missing daily flows, the Weibull plotting position is:
+
+\[
+P(Q \ge q) = 100\frac{m}{n+1}.
+\]
+
+A Q10 flow is high flow exceeded on about 10% of days; Q50 is the median flow; and Q90 is low flow exceeded on about 90% of days.
+
+```{r flow-exceedance}
+flow_exceedance <- q_daily_clean %>%
+  filter(is.finite(discharge_cfs), discharge_cfs >= 0) %>%
+  group_by(monitoring_location_id, monitoring_location_name) %>%
+  arrange(desc(discharge_cfs), .by_group = TRUE) %>%
+  mutate(
+    rank = row_number(),
+    n = n(),
+    exceedance_pct = 100 * rank / (n + 1)
+  ) %>%
+  ungroup()
+
+exceedance_summary <- q_daily_clean %>%
+  group_by(monitoring_location_id, monitoring_location_name) %>%
+  summarise(
+    Q10_cfs = quantile(discharge_cfs, probs = 0.90, na.rm = TRUE),
+    Q50_cfs = quantile(discharge_cfs, probs = 0.50, na.rm = TRUE),
+    Q90_cfs = quantile(discharge_cfs, probs = 0.10, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+dplyr::slice_head(exceedance_summary, n = 8)
+```
+
+
+```{r exceedance-plot, fig.width=10, fig.height=7}
+ggplot(flow_exceedance,
+       aes(exceedance_pct, discharge_cfs, color = monitoring_location_name)) +
+  geom_line(linewidth = 0.7) +
+  scale_y_log10(labels = label_number()) +
+  scale_x_continuous(breaks = c(0, 10, 25, 50, 75, 90, 100)) +
+  labs(
+    x = "Exceedance probability (%)",
+    y = expression("Daily mean discharge (ft"^3*" s"^-1*", log scale)"),
+    color = "USGS gage",
+    title = "Flow-duration curves"
+  ) +
+  theme_minimal()
+```
+
+> **Think:** Which curves are steepest? A steep curve indicates greater flow variability, whereas a flatter lower limb may indicate stronger groundwater support, storage, or regulation.
+
+# Relate median flow to watershed characteristics
+
+Q50 (median flow) represents the daily discharge exceeded 50% of the time and provides a simple measure of typical streamflow conditions.
+
+## Link USGS gages to NHDPlus attributes
+
+### Step 1: Assign a COMID to each gage
+
+This step queries the network for each gage and may take a few minutes to run.
+
+```{r assign-comid}
+
+# Remove the names attribute attached by quantile().
+exceedance_summary <- exceedance_summary %>%
+  mutate(
+    across(c(Q10_cfs, Q50_cfs, Q90_cfs), unname),
+    site_no = str_remove(monitoring_location_id, "^USGS-")
+  )
+
+
+# This network-based lookup can be slow.
+dat <- exceedance_summary %>%
+  mutate(
+    COMID_nwis = map_chr(
+      site_no,
+      get_comid_from_nwis
+    )
+  )
+dplyr::select(dat, monitoring_location_name, Q50_cfs, COMID_nwis)
+
+```
+
+
+### Step 2: Join watershed attributes
+
+Join the geology, land-cover, and basin-characteristic tables to the gage-level flow metrics using the assigned COMID.
+
+```{r merge-watershed-attributes}
+
+dat_merge <- dat %>% 
+  left_join(geology_attributes, by= c("COMID_nwis"="comid")) %>%
+  left_join(nlcd16_attributes, by= c("COMID_nwis"="comid")) %>%
+  left_join(basin_char_raw, by= c("COMID_nwis"="comid"))
+
+```
+
+## Summarize watershed characteristics with PCA
+
+Because the watershed tables contain many correlated attributes, use principal components analysis (PCA) to summarize major gradients among the study watersheds.
+
+```{r watershed-pca}
+
+# Keep site information separately
+site_info <- dat %>%
+  select(
+    monitoring_location_id,
+    monitoring_location_name,
+    site_no,
+    COMID_nwis,
+    Q50_cfs
+  )
+
+# Remove identifiers and streamflow from PCA dataset
+dat_pca <- dat_merge %>%
+  select(-Q50_cfs, -monitoring_location_id, -monitoring_location_name, -site_no, -COMID_nwis) %>%
+  select(
+    where(~ n_distinct(.x, na.rm = TRUE) > 1)
+  )
+
+# Run PCA
+landcover_pca <- prcomp(
+  dat_pca,
+  center = TRUE,
+  scale. = TRUE
+)
+
+# Avoid printing the full PCA summary in the knitted lab.
+
+# Extract the site-level PCA scores
+basin_site_scores <- landcover_pca$x %>%
+  as.data.frame() %>%
+  bind_cols(
+    site_info %>%
+      select(site_no, monitoring_location_name, Q50_cfs)
+  )
+```
+
+
+```{r plot-watershed-pca}
+
+basin_pca_plot <- ggplot(
+  basin_site_scores,
+  aes(x = PC1, y = PC2)
+  ) +
+  geom_point(
+    aes(color = Q50_cfs),
+    size = 3,
+    alpha = 0.8
+  ) +
+  geom_label_repel(
+    data = basin_site_scores,
+    aes(
+      x = PC1,
+      y = PC2,
+      label = monitoring_location_name
+    ),
+    inherit.aes = FALSE,
+    fontface = "bold",
+    size = 2,
+    min.segment.length = 0,
+    seed = 123
+  ) +
+  scale_color_viridis_c(
+    option = "viridis",
+    name = "Q50 threshold",
+    na.value = "grey70")  +
+  coord_equal() +
+  theme_classic()
+
+basin_pca_plot
+```
+
+
+
