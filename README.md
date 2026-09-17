@@ -77,4 +77,10 @@ Open:
 
 The R Markdown file walks through finding sites, examining metadata, checking time-series availability, downloading daily discharge and continuous sensor data, calculating annual discharge volume and runoff depth, and comparing turbidity among watersheds.
 
-# III. Other datasets (pending examples)
+# III. Second week: Linking streamflow with landcover 
+
+https://rpubs.com/kellyloria/1459961
+
+`01_USGS_flow_landcover_lab.Rmd`
+
+Pull in landcover class datasets from upstream land-cover and geologic characteristics to USGS stream gages and compare them with flow metrics.
