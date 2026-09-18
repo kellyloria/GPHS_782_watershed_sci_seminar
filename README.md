@@ -81,6 +81,8 @@ The R Markdown file walks through finding sites, examining metadata, checking ti
 
 https://rpubs.com/kellyloria/1459961
 
-`01_USGS_flow_landcover_lab.Rmd`
+`02_USGS_flow_landcover_lab.Rmd`
+
+This lab demonstrates how to combine USGS streamflow data with upstream watershed characteristics. We will calculate flow metrics for USGS stream gages, assign each gage to a stream reach (COMID), and extract upstream land-cover and geologic characteristics. We will then explore relationships between watershed characteristics and streamflow using data visualization and principal component analysis (PCA).
 
 Pull in landcover class datasets from upstream land-cover and geologic characteristics to USGS stream gages and compare them with flow metrics.
