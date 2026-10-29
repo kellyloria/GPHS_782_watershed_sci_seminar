@@ -215,7 +215,7 @@ Type in: 2021-10-01
 
 ```{r dates}
 
-start_date <- as.Date() # 
+start_date <- as.Date("2022-10-01") # 
 end_date   <- as.Date("2024-09-30")
 
 start_date
@@ -234,8 +234,8 @@ For discharge, we do not need every 15-minute observation.
 ```{r download-discharge}
 q_daily <- read_waterdata_daily(
   monitoring_location_id = sites$monitoring_location_id,
-  parameter_code = "",
-  statistic_id = "",
+  parameter_code = "00060",
+  statistic_id = "00003",
   time = c(start_date, end_date)
 ) %>%
   as_tibble()
@@ -294,14 +294,14 @@ q_completeness
 discharge_cfs
 
 ```{r hydrographs, fig.width=10, fig.height=6}
-ggplot(q_daily_clean, aes(x = date, y = , color=site_name)) +
+ggplot(q_daily_clean, aes(x = date, y = discharge_cfs, color=site_name)) +
   geom_line() +
   facet_wrap(~ site_name, scales = "free_y", ncol = 1) +
   labs(
     x = NULL,
     y = expression("Daily mean discharge (ft"^3*"/s)")
   ) +
-  theme_minimal()
+  theme_bw()
 ```
 
 # Plot the catchment normalized flow
@@ -327,7 +327,7 @@ Enter the the parameter code for turbidity: 63680
 ```{r download-continuous}
 sensor_data <- read_waterdata_continuous(
   monitoring_location_id = sites$monitoring_location_id,
-  parameter_code = c(""),
+  parameter_code = c("63680"),
   time = c(start_date, end_date)
 ) %>%
   as_tibble()
@@ -417,7 +417,7 @@ ggplot(
 mean_turbidity_fnu
 
 ```{r turbidity-time, fig.width=10, fig.height=6}
-ggplot(turbidity_daily, aes(x = date, y = , color=site_name)) +
+ggplot(turbidity_daily, aes(x = date, y = mean_turbidity_fnu, color=site_name)) +
   geom_line() +
   #facet_wrap(~ site_name, scales = "free_y", ncol = 1) +
   labs(
@@ -449,7 +449,7 @@ discharge_cms_km2
 ```{r q-turbidity-plot, fig.width=9, fig.height=6}
 ggplot(
   q_turbidity,
-  aes(x = , y = mean_turbidity_fnu, color=site_name)
+  aes(x = discharge_cms_km2, y = mean_turbidity_fnu, color=site_name)
 ) +
   geom_point(alpha = 0.5) +
   facet_wrap(~ site_name, scales = "free") +
@@ -475,7 +475,7 @@ site_models <- q_turbidity %>%
   mutate(
     model = map(
       data,
-      ~ glm( # ~ #,
+      ~ glm( mean_turbidity_fnu ~ discharge_cms_km2,
         data = .x,
         family = gaussian()
       )

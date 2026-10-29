@@ -1,0 +1,197 @@
+---
+title: "Watershed Science Lab: Downloading MODIS Data with NASA AppEEARS"
+author: "Watershed Science Seminar"
+date: "2026-10-28"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+Load packages:
+
+```{r libraries}
+
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(tibble)
+library(ggplot2)
+
+```
+
+
+## Learning goals
+
+1.  Register for a free NASA Earthdata account and access AppEEARS.
+2.  Distinguish point and area extraction requests.
+3.  Select MODIS products based on the variable, pixel size, and observation frequency.
+4.  Download satellite data and make a basic time-series plot in R.
+5.  Explain at least two limitations of using satellite products for watershed questions.
+
+# What is AppEEARS?
+
+[NASA AppEEARS](https://appeears.earthdatacloud.nasa.gov/) (Application for Extracting and Exploring Analysis Ready Samples) is a web application for extracting environmental data at selected coordinates or within polygons. It allows you to specify where, when, and which satellite-derived variables you want. It can return values and quality information, with preview tools before download.
+
+You do not need to write code to request data. We will use R only after downloading a file.
+
+# Create a free NASA Earthdata account
+
+1.  Open [NASA Earthdata Login](https://urs.earthdata.nasa.gov/).
+2.  Select Register and complete the registration form.
+3.  Activate your account using the link in the confirmation email.
+4.  Open [AppEEARS](https://appeears.earthdatacloud.nasa.gov/) and sign in using your Earthdata credentials.
+
+If you already have an Earthdata account, use your existing login.
+
+# MODIS: Which product should you choose?
+
+MODIS (Moderate Resolution Imaging Spectroradiometer) instruments flew on the Terra and Aqua satellites. Product codes help identify their sources: MOD usually refers to Terra, MYD to Aqua, and MCD to combined Terra/Aqua products. Products differ in their measured or modeled variable, spatial resolution, and time step.
+
+The table below gives common examples; check the [live AppEEARS product catalog](https://appeears.earthdatacloud.nasa.gov/products) for available collections, layers, and date coverage.
+
+| Product family | Example code | Approximate pixel size | Temporal resolution | What it represents |
+|:--------------|:--------------|:--------------|:--------------|:--------------|
+| Vegetation indices (NDVI, EVI) | MOD13Q1 | 250 m | 16 days | Vegetation greenness |
+| Vegetation indices (NDVI, EVI) | MOD13A1 | 500 m | 16 days | Greenness at coarser resolution |
+| Vegetation indices (NDVI, EVI) | MOD13A2 | 1 km | 16 days | Broad-scale greenness |
+| Surface reflectance | MOD09A1 | 500 m | 8 days | Spectral reflectance, useful for calculating indices |
+| Land surface temperature | MOD11A2 | 1 km | 8 days | Daytime/nighttime surface temperature |
+| Snow cover | MOD10A1 | 500 m | Daily | Snow cover / snow-related quality layers |
+| Leaf area index (LAI) / FPAR | MCD15A3H | 500 m | 4 days | Vegetation canopy properties |
+| Evapotranspiration | MOD16A2GF | 500 m | 8 days | Modeled evapotranspiration, gap-filled |
+| Gross primary productivity | MOD17A2HGF | 500 m | 8 days | Modeled terrestrial plant productivity |
+| Land cover | MCD12Q1 | 500 m | Annual | Classified land-cover types |
+| Burned area | MCD64A1 | 500 m | Monthly | Satellite-detected burned area |
+
+Important: The listed temporal resolution is the product's reporting or composite interval, not necessarily the number of cloud-free observations. Some layers require a scale factor or quality filtering. A satellite's land surface temperature is not stream-water temperature, and MODIS terrestrial GPP is not aquatic GPP.
+
+#  Request a time series for a point
+
+1.  In [AppEEARS](https://appeears.earthdatacloud.nasa.gov/), choose Extract \> Point Sample and start a new request.
+2.  Give the request a descriptive name (for example, `Watershed_NDVI_2020_2025`).
+3.  Enter one or more locations manually on the map or upload a CSV of coordinates. Check the on-screen coordinate format; latitude and longitude must not be reversed.
+4.  Choose a date range (for example, January 1, 2020–December 31, 2025).
+5.  Search for `MOD13Q1` and select the NDVI layer. Also select an appropriate quality layer, if available.
+6.  Review the requested locations, dates, product version, and layers; submit the request.
+7.  Under Explore, check the request status. Once processing finishes, preview and download the output, including metadata and quality information. Look for emails confirming the request when through and has been finished being processed.
+
+Try a location relevant to your own project. If you need a starting point, choose a forested watershed, a lake basin, or a valley with a visible vegetation gradient.
+
+## Optional: Make a coordinate CSV in R
+
+If you have a site list with ID, lat, long already you can also upload that site list file.
+
+```{r make-example-coordinates, eval=FALSE}
+
+
+locations <- tibble(
+  id = c("Incline", "Blackwood"),
+  latitude = c(39.2412, 39.1111),
+  longitude = c(-119.9394, -120.1808)
+)
+
+write_csv(locations, "appeears_locations_example.csv")
+```
+
+Before uploading, confirm that the CSV column names and format match the current AppEEARS upload instructions.
+
+### Point samples versus area samples
+
+Point Sample: extracts the value of the raster pixel containing each coordinate. This is useful for a simple time series at a field site, but the pixel may include vegetation, bare ground, water, and other features beyond the sampling point.
+
+Area Sample: extracts raster data over a polygon (for example, a watershed boundary), with options for spatial outputs and summaries. Choose Extract \> Area Sample, draw or upload a polygon, select products and dates, and choose output settings. This is generally more appropriate when your research question concerns the whole watershed rather than a single location.
+
+# Import a downloaded time series into R
+
+Download a point-sample CSV from AppEEARS. Often these will be in the zipped file.
+
+```{r read-data, eval=T, echo=FALSE}
+
+
+# Replace with the actual path to your downloaded CSV.
+dat <- read_csv("/Users/kellyloria/Documents/teaching/2026_Fall/d4c52ea4-405d-4962-9a3c-06d5e2c4cf48/Class-example-NDVI-MOD13Q1-061-results.csv")
+
+names(dat)
+glimpse(dat)
+head(dat)
+```
+
+Find the columns containing date, location, NDVI, and quality. The next code block is a template: change the column names to match your file, and consult the product documentation for scale factors and fill values.
+
+Organize NDVI observations and QA information
+
+```{r load-qc-data, eval=T, echo=TRUE}
+# Example ONLY: replace Date, Site, and NDVI with your actual columns.
+# Apply product-specific scale factors and QA filtering first.
+
+ndvi_dat <- dat %>%
+  transmute(
+    site = as.character(ID),
+    date = as.Date(Date),
+
+    # NDVI (already scaled by AppEEARS)
+    ndvi = as.numeric(
+      MOD13Q1_061__250m_16_days_NDVI
+    ),
+
+    # MODIS quality assessment information
+    modland = MOD13Q1_061__250m_16_days_VI_Quality_MODLAND_Description,
+
+    usefulness = MOD13Q1_061__250m_16_days_VI_Quality_VI_Usefulness_Description,
+
+    aerosol = MOD13Q1_061__250m_16_days_VI_Quality_Aerosol_Quantity_Description,
+
+    adjacent_cloud = MOD13Q1_061__250m_16_days_VI_Quality_Adjacent_cloud_detected_Description,
+
+    mixed_clouds = MOD13Q1_061__250m_16_days_VI_Quality_Mixed_Clouds_Description,
+
+    snow = `MOD13Q1_061__250m_16_days_VI_Quality_Possible_snow/ice_Description`,
+
+    shadow = MOD13Q1_061__250m_16_days_VI_Quality_Possible_shadow_Description,
+
+    land_water = `MOD13Q1_061__250m_16_days_VI_Quality_Land/Water_Mask_Description`
+  )
+
+```
+
+
+```{r plot-data, eval=T, echo=TRUE}
+ggplot(ndvi_dat, aes(x = date, y = ndvi)) +
+  geom_point(aes(shape= usefulness)) +
+  geom_line() +
+  facet_wrap(~ site, scales = "free_x") +
+  labs(x = "Date", y = "NDVI", title = "MODIS vegetation greenness") +
+  theme_bw()
+
+```
+
+Note: MODIS NDVI layers commonly store scaled integers; for MOD13Q1, the documented scale factor is typically 0.0001. Confirm the specific layer metadata before multiplying values, and remove fill/invalid values. Do not assume the downloaded file has already been scaled or quality-filtered.
+
+
+# Interpret the data carefully
+
+Before interpreting a graph, answer these questions:
+
+- Spatial resolution: What is the pixel size? Does it represent the process or land-cover type you are studying?
+- Temporal resolution: Is the product daily, 8-day, 16-day, monthly, or annual? Could short events be missed?
+- Quality: Are there clouds, snow, poor-quality retrievals, or missing observations?
+- Definition: Is the product a direct satellite observation, a composite, a classification, or a modeled estimate?
+- Scale: Would a watershed polygon average be more meaningful than a single pixel?
+
+For example, NDVI can be informative about broad vegetation changes, but it is not a direct measurement of groundwater availability or riparian water use. Similarly, land surface temperature is not a direct measurement of air or water temperature.
+
+# Useful resources
+
+- [NASA AppEEARS home](https://appeears.earthdatacloud.nasa.gov/)
+- [AppEEARS available products](https://appeears.earthdatacloud.nasa.gov/products)
+- [NASA Earthdata registration instructions](https://urs.earthdata.nasa.gov/documentation/for_users/how_to_register)
+- [NASA AppEEARS point-sample R tutorial (API; advanced)](https://github.com/nasa/AppEEARS-Data-Resources/blob/main/R/tutorials/AppEEARS_API_Point_R.Rmd)
+- [NASA AppEEARS area-sample R tutorial (API; advanced)](https://github.com/nasa/AppEEARS-Data-Resources/blob/main/R/tutorials/AppEEARS_API_Area_R.Rmd)
+- [NSIDC AppEEARS point/area walkthrough](https://nsidc.org/ru/node/32087)
