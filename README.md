@@ -3,7 +3,7 @@ Watersheds science seminar code demos for harmonizing various hydrological datas
 
 This repository will be used for class examples and short analyses in GPHS 782. The first exercise uses the **modern USGS Water Data APIs** to compare hydrology and water quality across two Lake Tahoe tributaries and the Truckee River.
 
-# I. Getting Started
+# Getting Started
 
 ## 1. Clone the course repository
 
@@ -20,7 +20,7 @@ https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git
 5. Click **Create Project**.
 
 
-# II. Lab 1: USGS observational Data: 
+# Lab 1: USGS observational Data: 
 
 http://rpubs.com/kellyloria/1453858
 
@@ -60,7 +60,7 @@ For a nearby Truckee River temperature record, optionally investigate:
 For daily mean discharge we also request **statistic code `00003`**, which represents the mean.
 
 
-# III. Lab 2: Linking streamflow with landcover 
+# Lab 2: Linking streamflow with landcover 
 
 https://rpubs.com/kellyloria/1459961
 
@@ -71,7 +71,7 @@ This lab demonstrates how to combine USGS streamflow data with upstream watershe
 Pull in landcover class datasets from upstream land-cover and geologic characteristics to USGS stream gages and compare them with flow metrics.
 
 
-# IV. Lab 3: Exploring vegetation using NASA MODIS satellite data
+# Lab 3: Exploring vegetation using NASA MODIS satellite data
 
 https://rpubs.com/kellyloria/1471667
 
