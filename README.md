@@ -3,18 +3,6 @@ Watersheds science seminar code demos for harmonizing various hydrological datas
 
 This repository will be used for class examples and short analyses in GPHS 782. The first exercise uses the **modern USGS Water Data APIs** to compare hydrology and water quality across two Lake Tahoe tributaries and the Truckee River.
 
-### Learning goals
-
-By the end of this exercise, you should be able to:
-
-1. Clone a GitHub repository and work from an RStudio Project.
-2. Find a USGS monitoring location and inspect which variables are available.
-3. Use the USGS `dataRetrieval` R package to query the modern Water Data APIs.
-4. Download discharge, water temperature, and turbidity observations.
-5. Check data completeness before calculating watershed metrics.
-6. Calculate annual streamflow volume and runoff depth for a water year.
-7. Compare mean turbidity among watersheds while recognizing differences in record availability.
-
 # I. Getting Started
 
 ## 1. Clone the course repository
@@ -32,11 +20,13 @@ https://github.com/kellyloria/GPHS_782_watershed_sci_seminar.git
 5. Click **Create Project**.
 
 
-# II. First week: USGS observational Data: 
+# II. Lab 1: USGS observational Data: 
 
 http://rpubs.com/kellyloria/1453858
 
-## 2. USGS resources
+`01_USGS_streamflow_waterquality_lab.Rmd`
+
+### USGS resources
 
 - **USGS Water Data map, Streamstats:** https://streamstats.usgs.gov/ss/
 - **USGS Water Data APIs:** https://www.usgs.gov/tools/usgs-water-data-apis
@@ -45,7 +35,7 @@ http://rpubs.com/kellyloria/1453858
 
 The USGS is transitioning away from its legacy WaterServices endpoints. For this class, we will use the newer `read_waterdata_*()` functions in `dataRetrieval`, which access the modernized USGS Water Data APIs.
 
-## 3. Candidate monitoring locations
+### Candidate monitoring locations
 
 | Watershed / river | USGS monitoring location | Approx. drainage area | Useful continuous variables |
 |---|---|---:|---|
@@ -59,7 +49,7 @@ For a nearby Truckee River temperature record, optionally investigate:
 
 - Truckee River at Clark, NV: `USGS-10350500`
 
-## 4. USGS parameter codes
+### USGS parameter codes
 
 | Variable | USGS parameter code | Typical unit |
 |---|---|---|
@@ -69,15 +59,8 @@ For a nearby Truckee River temperature record, optionally investigate:
 
 For daily mean discharge we also request **statistic code `00003`**, which represents the mean.
 
-## 5. Starter file
 
-Open:
-
-`01_USGS_streamflow_waterquality_lab.Rmd`
-
-The R Markdown file walks through finding sites, examining metadata, checking time-series availability, downloading daily discharge and continuous sensor data, calculating annual discharge volume and runoff depth, and comparing turbidity among watersheds.
-
-# III. Second week: Linking streamflow with landcover 
+# III. Lab 2: Linking streamflow with landcover 
 
 https://rpubs.com/kellyloria/1459961
 
@@ -86,3 +69,13 @@ https://rpubs.com/kellyloria/1459961
 This lab demonstrates how to combine USGS streamflow data with upstream watershed characteristics. We will calculate flow metrics for USGS stream gages, assign each gage to a stream reach (COMID), and extract upstream land-cover and geologic characteristics. We will then explore relationships between watershed characteristics and streamflow using data visualization and principal component analysis (PCA).
 
 Pull in landcover class datasets from upstream land-cover and geologic characteristics to USGS stream gages and compare them with flow metrics.
+
+
+# IV. Lab 3: Exploring vegetation using NASA MODIS satellite data
+
+https://rpubs.com/kellyloria/1471667
+
+`03_AppEEARS_MODIS_NDVI_lab.Rmd`
+
+This lab introduces satellite remote sensing data using NASA's AppEEARS. We will explore how satellite observations can be used to characterize seasonal vegetation greenness across watersheds using the Normalized Difference Vegetation Index (NDVI) and take into account metadata for NDVI observation quality.
+
